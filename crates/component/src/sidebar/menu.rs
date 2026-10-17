@@ -131,6 +131,9 @@ impl SidebarMenuItem {
         }
     }
 
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
     /// Set the icon for the menu item
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
         self.icon = Some(icon.into());

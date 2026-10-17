@@ -107,6 +107,7 @@ pub struct SidebarMenuItem {
     suffix: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     disabled: bool,
     context_menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static>>,
+    on_toggle: Option<Rc<dyn Fn(bool, &mut Window, &mut App)>>,
 }
 
 impl SidebarMenuItem {
@@ -128,12 +129,15 @@ impl SidebarMenuItem {
             suffix: None,
             disabled: false,
             context_menu: None,
+            on_toggle: None,
         }
     }
 
-    pub fn is_collapsed(&self) -> bool {
-        self.collapsed
+    pub fn on_toggle(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_toggle = Some(Rc::new(handler));
+        self
     }
+
     /// Set the icon for the menu item
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
         self.icon = Some(icon.into());
@@ -270,6 +274,7 @@ impl SidebarItem for SidebarMenuItem {
         window: &mut Window,
         cx: &mut App,
     ) -> impl IntoElement {
+        let on_toggle = self.on_toggle.clone();
         let click_to_open = self.click_to_open;
         let click_to_toggle = self.click_to_toggle;
         let default_open = self.default_open;
@@ -361,13 +366,19 @@ impl SidebarItem for SidebarMenuItem {
                                                 }),
                                         )
                                         .on_click({
-                                            move |_, _, cx| {
+                                            let on_toggle = on_toggle.clone();
+                                            move |_, window, cx| {
                                                 // Avoid trigger item click, just expand/collapse submenu
                                                 cx.stop_propagation();
+                                                let mut new_open = false;
                                                 open_state.update(cx, |is_open, cx| {
                                                     *is_open = !*is_open;
+                                                    new_open = *is_open;
                                                     cx.notify();
-                                                })
+                                                });
+                                                if let Some(cb) = &on_toggle {
+                                                    cb(new_open, window, cx);
+                                                }
                                             }
                                         }),
                                 )

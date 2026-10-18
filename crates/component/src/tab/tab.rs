@@ -797,7 +797,7 @@ impl RenderOnce for Tab {
         let inner_radius = self.variant.inner_radius(self.size, cx);
         let inner_paddings = self.variant.inner_paddings(self.size);
         let inner_margins = self.variant.inner_margins(self.size);
-        let inner_height = self.variant.inner_height(self.size) - px(12.);
+        let inner_height = self.variant.inner_height(self.size);
         let height = self.variant.height(self.size);
         let aria_label = self.a11y_label();
         let folder = self.variant == TabVariant::Folder;
@@ -957,7 +957,7 @@ impl RenderOnce for Tab {
             .gap_1()
             .items_center()
             .flex_shrink_0()
-            .h(height - px(12.))
+            .h(height)
             // A folder tab's curves reach past its bounds.
             .when(!folder, |this| this.overflow_hidden())
             .map(|this| match self.size {

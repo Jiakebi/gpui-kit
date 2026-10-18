@@ -803,6 +803,7 @@ impl RenderOnce for Tab {
         let folder = self.variant == TabVariant::Folder;
         let metrics = FolderTabMetrics::new(self.size, cx);
         let has_prefix = self.prefix.is_some();
+        let is_tab = self.variant == TabVariant::Tab;
 
         let segmented_indicator_active =
             self.variant == TabVariant::Segmented && self.indicator_active;
@@ -862,6 +863,7 @@ impl RenderOnce for Tab {
             .line_height(relative(1.25))
             .whitespace_nowrap()
             .items_center()
+            .rounded_t_lg()
             .justify_center()
             .overflow_hidden()
             .margins(inner_margins)
@@ -964,6 +966,7 @@ impl RenderOnce for Tab {
                 _ => this.text_sm(),
             })
             .rounded(radius)
+            .when(self.variant == TabVariant::Tab, |this| this.rounded_t_lg())
             .when(folder, |this| {
                 this.px(metrics.padding_x).pb(metrics.top_padding)
             })
@@ -991,6 +994,7 @@ impl RenderOnce for Tab {
                     .border_b(hover_style.borders.bottom)
                     .border_color(hover_style.border_color)
                     .rounded(radius)
+                    .rounded_t_lg()
             })
             .when(folder && self.selected, |this| {
                 this.child(folder_tab_shape(

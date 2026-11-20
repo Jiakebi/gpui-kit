@@ -8,12 +8,18 @@ use crate::{
     v_flex,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
+    AnyElement, App, ClickEvent, ElementId, Entity, InteractiveElement as _, IntoElement,
     ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement,
     Styled, Window, div, percentage, prelude::FluentBuilder,
 };
 use gpui_base::TestSupportExt as _;
 use std::rc::Rc;
+
+/// Callback fired when a submenu is opened or closed.
+///
+/// Takes `&bool` (like `on_click` takes `&ClickEvent`) so it can be passed
+/// straight from `cx.listener(|this, open: &bool, window, cx| ...)`.
+type ToggleHandler = Rc<dyn Fn(&bool, &mut Window, &mut App)>;
 
 /// Menu for the [`super::Sidebar`]
 #[derive(Clone)]
@@ -107,7 +113,7 @@ pub struct SidebarMenuItem {
     suffix: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     disabled: bool,
     context_menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static>>,
-    on_toggle: Option<Rc<dyn Fn(bool, &mut Window, &mut App)>>,
+    on_toggle: Option<ToggleHandler>,
 }
 
 impl SidebarMenuItem {
@@ -133,7 +139,19 @@ impl SidebarMenuItem {
         }
     }
 
-    pub fn on_toggle(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+    /// Set a callback that fires whenever the submenu is opened or closed,
+    /// with the new open state.
+    ///
+    /// Fires for the caret button as well as for row clicks when
+    /// [`Self::click_to_open`] or [`Self::click_to_toggle`] is enabled.
+    /// Only fires when the state actually changes.
+    ///
+    /// Works directly with `cx.listener`:
+    ///
+    /// ```ignore
+    /// .on_toggle(cx.listener(move |this, open: &bool, _, cx| { ... }))
+    /// ```
+    pub fn on_toggle(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_toggle = Some(Rc::new(handler));
         self
     }
@@ -254,6 +272,28 @@ impl SidebarMenuItem {
     }
 }
 
+/// Set the submenu open state and fire `on_toggle` if it actually changed.
+fn set_open_state(
+    state: &Entity<bool>,
+    new_open: impl FnOnce(bool) -> bool,
+    on_toggle: Option<&ToggleHandler>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let mut changed = None;
+    state.update(cx, |is_open, cx| {
+        let next = new_open(*is_open);
+        if next != *is_open {
+            *is_open = next;
+            changed = Some(next);
+            cx.notify();
+        }
+    });
+    if let (Some(open), Some(cb)) = (changed, on_toggle) {
+        cb(&open, window, cx);
+    }
+}
+
 impl FluentBuilder for SidebarMenuItem {}
 
 impl Collapsible for SidebarMenuItem {
@@ -370,15 +410,13 @@ impl SidebarItem for SidebarMenuItem {
                                             move |_, window, cx| {
                                                 // Avoid trigger item click, just expand/collapse submenu
                                                 cx.stop_propagation();
-                                                let mut new_open = false;
-                                                open_state.update(cx, |is_open, cx| {
-                                                    *is_open = !*is_open;
-                                                    new_open = *is_open;
-                                                    cx.notify();
-                                                });
-                                                if let Some(cb) = &on_toggle {
-                                                    cb(new_open, window, cx);
-                                                }
+                                                set_open_state(
+                                                    &open_state,
+                                                    |open| !open,
+                                                    on_toggle.as_ref(),
+                                                    window,
+                                                    cx,
+                                                );
                                             }
                                         }),
                                 )
@@ -390,20 +428,25 @@ impl SidebarItem for SidebarMenuItem {
                     .when(!is_disabled, |this| {
                         this.on_click({
                             let open_state = open_state.clone();
+                            let on_toggle = on_toggle.clone();
                             move |ev, window, cx| {
-                                if click_to_open {
-                                    if let Some(ref s) = open_state {
-                                        s.update(cx, |is_open: &mut bool, cx| {
-                                            *is_open = true;
-                                            cx.notify();
-                                        });
-                                    }
-                                } else if click_to_toggle {
-                                    if let Some(ref s) = open_state {
-                                        s.update(cx, |is_open: &mut bool, cx| {
-                                            *is_open = !*is_open;
-                                            cx.notify();
-                                        });
+                                if let Some(ref s) = open_state {
+                                    if click_to_open {
+                                        set_open_state(
+                                            s,
+                                            |_| true,
+                                            on_toggle.as_ref(),
+                                            window,
+                                            cx,
+                                        );
+                                    } else if click_to_toggle {
+                                        set_open_state(
+                                            s,
+                                            |open| !open,
+                                            on_toggle.as_ref(),
+                                            window,
+                                            cx,
+                                        );
                                     }
                                 }
                                 handler(ev, window, cx)
